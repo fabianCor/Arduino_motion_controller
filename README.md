@@ -11,14 +11,14 @@
  the user defines the speed (default = 15 steps per cycle), and the program automatically calculates the speed decay to stop in 48 images (=2 sec of rendered video).
  
  * Motor 2. for panning (rotational movement). 200 steps per revol. 1/8 microstepping (=1.8/8= 0.225 degrees per step)
- *  the user defines 
-    when to start panning (default = after sliding for 10cm), 
-    how fast(number of steps per cycle; default = 1step), 
-    how much (start to end angle of rotation default= 30 degrees from the start position), 
-    as well as the direction (default= clockwise).
-    Note: the start position is the current position when the program has initialized and the program counts from there.
+ *   the user defines 
+ *    when to start panning (default = after sliding for 10cm), 
+ *    how fast(number of steps per cycle; default = 1step), 
+ *    how much (start to end angle of rotation default= 30 degrees from the start position), 
+ *    as well as the direction (default= clockwise).
+ Note: the start position is the current position when the program has initialized and the program counts from there.
 
- * The controller can also be wired to the camera to control the exposure.
+ The controller can also be connected to a DSLR camera to control the exposure like an intervalometer.
    at every cycle of the user-defined interval, the camera waits for motors to execute movements before starting an exposure
    
 ####Comming soon: 
