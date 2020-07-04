@@ -1,27 +1,28 @@
+//Arduino_motion_controller
 /* CONTROL EXPOSURE AND CAMERA MOVEMENT WITH ARDUINO
- *  This program drives 2 stepper motors; 
- * 1. for linear motion on a camera slider 
- *  (change MaxSliderPosition depending on your equipment and microstepping setting) 
- *   the user defines, speed, and the program automatically calculates the speed decay to stop in 2 sec of final movie (=48 images).
- * 2. and the other one for panning. 
- *  the user defines when to start panning, how fast(number of steps per cycle), and how much (start to end angle of rotation), as well as the direction.
+    This program drives 2 stepper motors;
+   1. for linear motion on a camera slider
+    (change MaxSliderPosition depending on your equipment and microstepping setting)
+     the user defines, speed, and the program automatically calculates the speed decay to stop in 2 sec of final movie (=48 images).
+   2. and the other one for panning.
+    the user defines when to start panning, how fast(number of steps per cycle), and how much (start to end angle of rotation), as well as the direction.
 
- * The controller can also be wired to the camera to control the exposure.
- *  at every cycle of the user-defined interval, the camera waits for motors to execute movements before starting the exposure
- *  
- * ####Comming soon: a panorama mode to make high res 2-photo stiches at every step of the linear motion.
- * 
- * credits : For camera release I modified the pro-timer free arduino version from Gunther Wegner,  to take advantage of the exposure ramping 
+   The controller can also be wired to the camera to control the exposure.
+    at every cycle of the user-defined interval, the camera waits for motors to execute movements before starting the exposure
+
+   ####Comming soon: a panorama mode to make high res 2-photo stiches at every step of the linear motion.
+
+   credits : For camera release I modified the pro-timer free arduino version from Gunther Wegner,  to take advantage of the exposure ramping
   http://gwegner.de
   https://github.com/gwegner/LRTimelapse-Pro-Timer-Free
 
   For the rotary encoder I used Ben Bruxton's rotary.h library
   http://www.buxtronix.net/2011/10/rotary-encoders-done-properly.html
-  
-  
+
+
 */
 
-#include <rotary.h> 
+#include <rotary.h>
 #include <Arduino.h>
 #include <U8x8lib.h>
 #include <Wire.h>
@@ -65,6 +66,7 @@ int panAngl = 30;
 int currPosition;
 unsigned long MaxSliderPosition = 10500; // rail=70cm utiles, spindle =4cm perimeter , motor=200 steps per rev. *4 (microstepping setting)
 int currPan = 0;
+int ManualSteps = 0;
 
 // ######## create OLED object #######
 
@@ -133,7 +135,7 @@ int exposureTime = 0;    // Time for exposure in Timer Interrupt (10 msec)
 /* This section defines the consecutive menus
     the text captions to display at various steps ect
 */
-int maxNumber = 12;  //counting starts at 0
+int maxNumber = 14;  //counting starts at 0
 char* myMenus[] = {
   "SCR_INTERVAL",
   "SCR_MODE",
@@ -147,6 +149,8 @@ char* myMenus[] = {
   "SCR_DONE",
   "PowerSave",
   "SCR_SINGLE",
+  "SCR_MANUAL_LONG",
+  "SCR_MANUAL_ROT",
 };
 
 unsigned const int SCR_INTERVAL = 0;
@@ -167,6 +171,8 @@ unsigned const int SCR_DONE = 9;
 unsigned const int PowerSave = 10;
 unsigned const int powerSaveOn = 101;
 unsigned const int  SCR_SINGLE = 11;
+unsigned const int SCR_MANUAL_LONG = 12;
+unsigned const int SCR_MANUAL_ROT = 13;
 
 unsigned const int MainScreen = 111;
 const int MODE_M = 0;
@@ -175,7 +181,7 @@ int mode = MODE_M;
 
 unsigned int x = 0;
 unsigned int contrast = 10;
-unsigned int currentMenu = 111;
+unsigned int currentMenu = MainScreen;
 
 //////////////////////////////////////////////////////////////////////////
 //#######################################################################
@@ -207,8 +213,8 @@ void setup(void)
     /* Motor initialization*/
   pinMode(7, OUTPUT); //Step for longitudinal motion
   pinMode(6, OUTPUT); //Direction for longitudinsal motion
-  pinMode(5, OUTPUT); //Step for longitudinal motion
-  pinMode(4, OUTPUT); //Direction for longitudinsal motion
+  pinMode(5, OUTPUT); //Step for rotational motion
+  pinMode(4, OUTPUT); //Direction for rotational motion
   pinMode(LimitSwitch, INPUT_PULLUP ); //Read signal from limit (Switch switch =1 when contact, PULLUP mode inverts this so that no contact =1)
   pinMode(12, OUTPUT);          // initialize output pin for camera release
 
@@ -288,14 +294,15 @@ void loop(void)
     }
 
   }
-  
-  volatile unsigned char turn = r.process();
+
+
   if (currentMenu == MainScreen) {
+    volatile unsigned char turn = r.process();
     // read encoder value
     if (turn) {
-      turn == DIR_CCW ? x = x - 1 : x = x + 1;
+      turn == DIR_CW ? x = x - 1 : x = x + 1;
       if (x < 0) {             // no values < 0; later: use unsigned int
-        x = maxNumber - 1;    // roll over
+        x = 13;    // roll over
         blinkOLED();
       }
       if (x > maxNumber - 1) {           // no more strings
@@ -306,8 +313,7 @@ void loop(void)
       pre(x);
     }
 
-    // if (!digitalRead(8)) { //center button
-    if (r.buttonPressedReleased(25)) {
+    if (r.buttonPressedReleased(20)) {
       switch ( x ) {
         case SCR_INTERVAL:
           MenuString(x);
@@ -348,6 +354,8 @@ void loop(void)
           break;
         case SCR_PAUSE:
           isRunning = 0;
+          u8x8.setCursor(0, 4);
+          u8x8.print("Paused...");
           MenuString(x);
           currentMenu = SCR_PAUSE;
           break;
@@ -363,306 +371,322 @@ void loop(void)
           printPowerSaveMenu();
           currentMenu = PowerSave;
           break;
+        case SCR_MANUAL_ROT:
+          MenuString(x);
+          u8x8.setCursor(0, 4);
+          u8x8.print("Manual Rotation");
+          currentMenu = SCR_MANUAL_ROT;
+          ManualSteps = 0;
+          break;
+        case SCR_MANUAL_LONG:
+          MenuString(x);
+          u8x8.setCursor(0, 4);
+          u8x8.print("Manual movt.");
+          currentMenu = SCR_MANUAL_LONG;
+          ManualSteps = 0;
+          break;
       }
     }
   }
-  if (currentMenu == SCR_INTERVAL) {
 
-    if (turn) {
-      turn == DIR_CCW ? interval = interval - 0.2 : interval = interval + 0.2;
-      printIntervalMenu();
-    }
-    if (r.buttonPressedReleased(25)) {
-      currentMenu = MainScreen;
-      pre(x);
-    }
-  }
-
-  if (currentMenu == SCR_MODE) {
-    volatile unsigned char tur = r.process();
-
-    if (turn) {
-      if ( mode == MODE_M ) {
-        mode = MODE_BULB;
-        u8x8.clearLine(6);
-        u8x8.clearLine(7);
-        u8x8.setCursor(8, 6);
-        u8x8.print("BULB");
-      } else {
-        mode = MODE_M;
-        u8x8.clearLine(6);
-        u8x8.clearLine(7);
-        u8x8.setCursor(8, 6);
-        u8x8.print("M");
-        releaseTime = RELEASE_TIME_DEFAULT;   // when switching to M-Mode, set the shortest shutter release time.
+  if (currentMenu < 111) {
+    volatile unsigned char encodeValue = r.process();
+    if (encodeValue) {
+      switch ( currentMenu ) {
+        case SCR_INTERVAL:
+          encodeValue == DIR_CCW ? interval = interval - 0.2 : interval = interval + 0.2;
+          printIntervalMenu();
+          break;
+        case SCR_MODE:
+          if ( mode == MODE_M ) {
+            mode = MODE_BULB;
+            u8x8.clearLine(6);
+            u8x8.clearLine(7);
+            u8x8.setCursor(8, 6);
+            u8x8.print("BULB");
+          } else {
+            mode = MODE_M;
+            u8x8.clearLine(6);
+            u8x8.clearLine(7);
+            u8x8.setCursor(8, 6);
+            u8x8.print("M");
+            releaseTime = RELEASE_TIME_DEFAULT;   // when switching to M-Mode, set the shortest shutter release time.
+          }
+          break;
+        case SCR_SHOTS:
+          if ( abs(maxNoOfShots) >= 2500) {
+            encodeValue == DIR_CCW ? maxNoOfShots = maxNoOfShots - 100 : maxNoOfShots = maxNoOfShots + 100;
+          } else if ( abs(maxNoOfShots) >= 1000) {
+            encodeValue == DIR_CCW ? maxNoOfShots = maxNoOfShots - 50 : maxNoOfShots = maxNoOfShots + 50;
+            printNoOfShotsMenu();
+          } else {
+            //maxNoOfShots = editValue(maxNoOfShots, 10);
+            encodeValue == DIR_CCW ? maxNoOfShots = maxNoOfShots - 10 : maxNoOfShots = maxNoOfShots + 10;
+          }
+          if (maxNoOfShots <= 0) {
+            maxNoOfShots = 0;
+          }
+          if ( maxNoOfShots >= 9999 ) { // prevents screwing the ui
+            maxNoOfShots = 9999;
+          }
+          printNoOfShotsMenu();
+          break;
+        case SCR_EXPOSURE:
+          encodeValue == DIR_CW ? releaseTime = releaseTime = (float)((int)(releaseTime * 10) + 1) / 10 : releaseTime = releaseTime = (float)((int)(releaseTime * 10) - 1) / 10;
+          u8x8.clearLine(4);
+          u8x8.clearLine(5);
+          u8x8.setCursor(11, 4);
+          u8x8.print(releaseTime);
+          break;
+        case SCR_MOTOR1:
+          encodeValue == DIR_CCW ? sliderNsteps = sliderNsteps - 1 : sliderNsteps = sliderNsteps + 1;
+          if (sliderNsteps < 1) {
+            sliderNsteps = 0;
+          }
+          u8x8.setCursor(10, 2);
+          u8x8.print(sliderNsteps);
+          break;
+        case SCR_MOTOR1_DIR:
+          if (sliderDir == 1) {
+            sliderDir = 0;
+          } else if (sliderDir == 0) {
+            sliderDir = 1;
+          }
+          u8x8.setCursor(10, 4);
+          u8x8.print(sliderDir);
+          break;
+        case SCR_MOTOR2:
+          encodeValue == DIR_CCW ? panNsteps = panNsteps - 1 : panNsteps = panNsteps + 1;
+          if (panNsteps < 1) {
+            panNsteps = 0;
+          } else {
+            panNsteps = panNsteps;
+          }
+          printMotor2Menu();
+          break;
+        case SCR_MOTOR2_dir:
+          if (panDir == 1) {
+            panDir = 0;
+          } else if (panDir == 0) {
+            panDir = 1;
+          }
+          printMotor2Menu();
+          break;
+        case SCR_MOTOR2_Start:
+          encodeValue == DIR_CCW ? panStart = panStart - 1 : panStart = panStart + 1;
+          printMotor2Menu();
+          break;
+        case SCR_MOTOR2_Angl:
+          encodeValue == DIR_CCW ? panAngl = panAngl - 1 : panAngl = panAngl + 1;
+          printMotor2Menu();
+          break;
+        case SCR_RAMPING:
+          encodeValue == DIR_CCW ? rampDuration -= 10 : rampDuration += 10;
+          printRampingMenu();
+          break;
+        case SCR_RAMP_TO:
+          encodeValue == DIR_CCW ? rampTo = ((float)((int)(rampTo * 10) - 1) / 10) : ((float)((int)(rampTo * 10) + 1) / 10);
+          printRampingMenu();
+          break;
+        case SCR_RUNNING:
+          printRunningScreen();
+          isRunning = 1;
+          u8x8.setCursor(0, 6);
+          u8x8.print("< Settings");
+          break;
+        case SCR_SINGLE:
+          if (releaseTime < 60) {
+            encodeValue == DIR_CCW ? releaseTime = (float)((int)(releaseTime - 1)) : releaseTime = (float)((int)(releaseTime + 1)) ;
+            if (releaseTime < RELEASE_TIME_DEFAULT )  // if it's too short after decrementing, set to the default release time.
+              releaseTime = RELEASE_TIME_DEFAULT;
+            printSingleScreen();
+          } else {
+            encodeValue == DIR_CCW ? releaseTime = (float)((int)(releaseTime - 10)) : releaseTime = (float)((int)(releaseTime + 10));
+            printSingleScreen();
+          }
+          break;
+        case SCR_DONE:
+          currentMenu = MainScreen;
+          pre(x);
+          break;
+        case PowerSave:
+          u8x8.setPowerSave(true);
+          currentMenu = powerSaveOn;
+          break;
+        case powerSaveOn:
+          u8x8.setPowerSave(false);
+          currentMenu = SCR_RUNNING;
+          break;
+        case SCR_MANUAL_LONG:
+          if (encodeValue == DIR_CW ) {
+            ManualSteps += 200 ;
+            digitalWrite(6, HIGH);
+            int target = currPosition + ManualSteps;
+            Serial.println(ManualSteps);
+            if ( target >= MaxSliderPosition) {
+              target = MaxSliderPosition;
+              u8x8.clear();
+              u8x8.setCursor(0, 4);
+              u8x8.print("Max pos. reached");
+            }
+            while ( currPosition < target )
+            {
+              Serial.print(".");
+              digitalWrite(7, HIGH);
+              delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+              digitalWrite(7, LOW);
+              delayMicroseconds(1200);
+              currPosition++;
+            }
+          } else if (encodeValue == DIR_CCW) {
+            digitalWrite(6, LOW);
+            ManualSteps = ManualSteps + 200;
+            int target = currPosition - ManualSteps;
+            if ( target <= 0) {
+              target = 0;
+              u8x8.clear();
+              u8x8.setCursor(0, 4);
+              u8x8.print("Max pos. reached");
+            }
+            while ( currPosition > target )
+            {
+              digitalWrite(7, HIGH);
+              delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+              digitalWrite(7, LOW);
+              delayMicroseconds(1200);
+              currPosition--;
+            }
+          }
+          break;
+        case SCR_MANUAL_ROT:
+          if (encodeValue == DIR_CW ) {
+            ManualSteps += 20 ;
+            int panTarget = currPan + ManualSteps;
+            digitalWrite(4, HIGH);
+            while (currPan < panTarget)
+            {
+              digitalWrite(5, HIGH);
+              delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+              digitalWrite(5, LOW);
+              delayMicroseconds(1200);
+              currPan++;
+            }
+          } else {
+            ManualSteps += 20 ;
+            int panTarget = currPan - ManualSteps;
+            digitalWrite(4, LOW);
+            while (currPan > panTarget)
+            {
+              digitalWrite(5, HIGH);
+              delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+              digitalWrite(5, LOW);
+              delayMicroseconds(1200);
+              currPan--;
+            }
+          }
+          break;
       }
-    }
-    if (r.buttonPressedReleased(25)) {
-      currentMenu = MainScreen;
-      pre(x);
-    }
-  }
+    }// end of if (encodeValue)
 
-  if (currentMenu == SCR_SHOTS) {
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      if ( abs(maxNoOfShots) >= 2500) {
-        turn == DIR_CCW ? maxNoOfShots = maxNoOfShots - 100 : maxNoOfShots = maxNoOfShots + 200;
-      } else if ( abs(maxNoOfShots) >= 1000) {
-        turn == DIR_CCW ? maxNoOfShots = maxNoOfShots - 50 : maxNoOfShots = maxNoOfShots + 50;
-        printNoOfShotsMenu();
-      } else {
-        turn == DIR_CCW ? maxNoOfShots = maxNoOfShots - 10 : maxNoOfShots = maxNoOfShots + 10;
+   if (r.buttonPressedReleased(20)) {
+      switch ( currentMenu ) {
+        case SCR_INTERVAL:
+          currentMenu = MainScreen;
+          x = x + 1;
+          pre(x);
+          break;
+        case SCR_MODE:
+          currentMenu = MainScreen;
+          x = x + 1;
+          pre(x);
+          break;
+        case SCR_SHOTS:
+          currentMenu = MainScreen;
+          x = x + 1;
+          pre(x);
+          break;
+        case SCR_EXPOSURE:
+          currentMenu = MainScreen;
+          x = x + 1;
+          pre(x);
+          break;
+        case SCR_MOTOR1:
+          currentMenu = SCR_MOTOR1_DIR;
+          break;
+        case SCR_MOTOR1_DIR:
+          currentMenu = MainScreen;
+          x = x + 1;
+          pre(x);
+          break;
+        case SCR_MOTOR2:
+          currentMenu = SCR_MOTOR2_dir;
+          printMotor2Menu();
+          break;
+        case SCR_MOTOR2_dir:
+          currentMenu = SCR_MOTOR2_Start;
+          printMotor2Menu();
+          break;
+        case SCR_MOTOR2_Start:
+          currentMenu = SCR_MOTOR2_Angl;
+          printMotor2Menu();
+          break;
+        case SCR_MOTOR2_Angl:
+          currentMenu = MainScreen;
+          x = x + 1;
+          pre(x);
+          break;
+        case SCR_RAMPING:
+          currentMenu = SCR_RAMP_TO;
+          break;
+        case SCR_RAMP_TO:
+          currentMenu = MainScreen;
+          x = x + 1;
+          pre(x);
+          break;
+        case SCR_RUNNING:
+          currentMenu = MainScreen;
+          x = x + 1;
+          pre(x);
+          break;
+        case SCR_PAUSE:
+          u8x8.clear();
+          currentMenu = SCR_RUNNING;
+          x = currentMenu;
+          isRunning = 1;
+          previousMillis = millis() - (imageCount * 1000); // prevent counting the paused time as running time;
+          break;
+        case SCR_SINGLE:
+          u8x8.clear();
+          u8x8.setCursor(0, 2);
+          u8x8.print("Decoupling...");
+          delay( decoupleTime );
+          u8x8.clear();
+          releaseCamera();
+          u8x8.clear();
+          printSingleScreen();
+          break;
+        case SCR_DONE:
+          stopShooting();
+          currentMenu = MainScreen;
+          pre(x);
+          break;
+        case powerSaveOn:
+          u8x8.setPowerSave(false);
+          currentMenu = MainScreen;
+          x = currentMenu;
+          pre(x);
+          break;
+        case SCR_MANUAL_ROT:
+          currentMenu = MainScreen;
+          x = currentMenu;
+          pre(x);
+          break;
+        case SCR_MANUAL_LONG:
+          currentMenu = MainScreen;
+          x = currentMenu;
+          pre(x);
+          break;
       }
-      if (maxNoOfShots <= 0) {
-        maxNoOfShots = 0;
-      }
-      if ( maxNoOfShots >= 9999 ) { // prevents screwing the ui
-        maxNoOfShots = 9999;
-      }
-      printNoOfShotsMenu();
-    }
-    if (r.buttonPressedReleased(25)) {
-      currentMenu = MainScreen;
-      x = x + 1;
-      pre(x);
-    }
-  }
-
-  if (currentMenu == SCR_EXPOSURE) {
-
-    if (turn) {
-      turn == DIR_CCW ? releaseTime = releaseTime = (float)((int)(releaseTime * 10) + 1) / 10 : releaseTime = releaseTime = (float)((int)(releaseTime * 10) - 1) / 10;
-      u8x8.clearLine(4);
-      u8x8.clearLine(5);
-      u8x8.setCursor(11, 4);
-      u8x8.print(releaseTime);
-    }
-    if (r.buttonPressedReleased(25)) {
-      currentMenu = MainScreen;
-      pre(x);
-    }
-  }
-
-
-  if (currentMenu == SCR_MOTOR1) {
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      turn == DIR_CCW ? sliderNsteps = sliderNsteps - 1 : sliderNsteps = sliderNsteps + 1;
-      if (sliderNsteps < 1) {
-        sliderNsteps = 0;
-      }
-
-      u8x8.setCursor(10, 2);
-      u8x8.print(sliderNsteps);
-    }
-    if (r.buttonPressedReleased(25)) {
-      currentMenu = SCR_MOTOR1_DIR;
-    }
-  }
-  if (currentMenu == SCR_MOTOR1_DIR) {
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      if (sliderDir == 1) {
-        sliderDir = 0;
-      } else if (sliderDir == 0) {
-        sliderDir = 1;
-      }
-
-      u8x8.setCursor(10, 4);
-      u8x8.print(sliderDir);
-    }
-    if (r.buttonPressedReleased(25)) {
-      currentMenu = MainScreen;
-      x = 5;
-      pre(x);
-    }
-  }
-
-
-  if (currentMenu == SCR_MOTOR2) {
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      turn == DIR_CCW ? panNsteps = panNsteps - 1 : panNsteps = panNsteps + 1;
-      if (panNsteps < 1) {
-        panNsteps = 0;
-      } else {
-        panNsteps = panNsteps;
-      }
-      printMotor2Menu();
-    }
-    if (r.buttonPressedReleased(25)) {
-      currentMenu = SCR_MOTOR2_dir;
-      printMotor2Menu();
-    }
-  }
-  if (currentMenu == SCR_MOTOR2_dir) {
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      if (panDir == 1) {
-        panDir = 0;
-      } else if (panDir == 0) {
-        panDir = 1;
-      }
-      printMotor2Menu();
-      //      u8x8.setCursor(10, 0);
-      //      u8x8.print(panDir);
-
-    }
-    if (r.buttonPressedReleased(25)) {
-      u8x8.noInverse();
-      currentMenu = SCR_MOTOR2_Start;
-      printMotor2Menu();
-    }
-  }
-  if (currentMenu == SCR_MOTOR2_Start) {
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      turn == DIR_CCW ? panStart = panStart - 1 : panStart = panStart + 1;
-      Serial.println(panStart);
-      printMotor2Menu();
-      //u8x8.clearLine(4);
-      //      u8x8.setCursor(11, 4);
-      //      u8x8.print(panStart);
-
-    }
-    if (r.buttonPressedReleased(25)) {
-      currentMenu = SCR_MOTOR2_Angl;
-      printMotor2Menu();
-    }
-  }
-  if (currentMenu == SCR_MOTOR2_Angl) {
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      turn == DIR_CCW ? panAngl = panAngl - 1 : panAngl = panAngl + 1;
-      printMotor2Menu();
-      //      u8x8.setCursor(9, 6);
-      //      u8x8.print(panAngl);
-
-    }
-    if (r.buttonPressedReleased(25)) {
-      currentMenu = MainScreen;
-      pre(x);
-    }
-  }
-
-
-  if (currentMenu == SCR_RAMPING) {
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      turn == DIR_CCW ? rampDuration -= 10 : rampDuration += 10;
-      printRampingMenu();
-    }
-    if (r.buttonPressedReleased(25)) {
-      currentMenu = SCR_RAMP_TO;
-    }
-  }
-
-  if (currentMenu == SCR_RAMP_TO) {
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      turn == DIR_CCW ? rampTo = ((float)((int)(rampTo * 10) - 1) / 10) : ((float)((int)(rampTo * 10) + 1) / 10);
-      printRampingMenu();
-    }
-    if (r.buttonPressedReleased(25)) {
-      currentMenu = MainScreen;
-      pre(x);
-    }
-  }
-
-  if (currentMenu == SCR_RUNNING) {
-
-    printRunningScreen();
-    isRunning = 1;
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      //tempoararily display options
-      u8x8.setCursor(0, 6);
-      u8x8.print("< Settings");
-    }
-
-
-    if (r.buttonPressedReleased(25)) {
-      currentMenu = MainScreen;
-      x = 8;
-      pre(x);
-    }
-  }
-
-  if (currentMenu == SCR_SINGLE) {
-
-      if (releaseTime < 60){
-        volatile unsigned char turn = r.process();
-      if (turn) {
-        turn == DIR_CCW ? releaseTime = (float)((int)(releaseTime - 1)) : releaseTime = (float)((int)(releaseTime + 1)) ;
-      if (releaseTime < RELEASE_TIME_DEFAULT )  // if it's too short after decrementing, set to the default release time.
-        releaseTime = RELEASE_TIME_DEFAULT;
-        printSingleScreen();
-        }
-      } else {
-      volatile unsigned char turn = r.process();
-      if (turn) {
-        turn == DIR_CCW ? releaseTime = (float)((int)(releaseTime - 10)): releaseTime = (float)((int)(releaseTime + 10));
-        printSingleScreen();
-      }
-    }
-    if (r.buttonPressedReleased(25)) {
-      u8x8.clear();
-      u8x8.setCursor(0, 2);
-      u8x8.print("Decoupling...");
-      delay( decoupleTime );
-      u8x8.clear();
-      releaseCamera();
-      u8x8.clear();
-      printSingleScreen();
-    }
-  }
-
-
-  if (currentMenu == SCR_PAUSE) {
-    u8x8.setCursor(0, 4);
-    u8x8.print("Paused...");
-    if (r.buttonPressedReleased(25)) {
-      u8x8.clear();
-      currentMenu = SCR_RUNNING;
-      x = currentMenu;
-      isRunning = 1;
-      previousMillis = millis() - (imageCount * 1000); // prevent counting the paused time as running time;
-
-    }
-  }
-
-  if (currentMenu == SCR_DONE) {
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      currentMenu = MainScreen;
-      pre(x);
-    }
-    if (r.buttonPressedReleased(25)) {
-      stopShooting();
-      currentMenu = MainScreen;
-      pre(x);
-    }
-  }
-
-  if (currentMenu == PowerSave) {
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      u8x8.setPowerSave(true);
-      currentMenu = powerSaveOn;
-    }
-  }
-  if (currentMenu == powerSaveOn) {
-    volatile unsigned char turn = r.process();
-    if (turn) {
-      u8x8.setPowerSave(false);
-      currentMenu = SCR_RUNNING;
-    }
-    if (r.buttonPressedReleased(25)) {
-      u8x8.setPowerSave(false);
-      currentMenu = MainScreen;
-      x = 111;
-      pre(x);
     }
   }
 
@@ -1214,6 +1238,12 @@ int decay2sec(int x) {
   return count;
 }
 // ----------- HELPER METHODS -------------------------------------
+
+int editValue (int value , int increment) {
+  volatile unsigned char turn = r.process();
+  turn == DIR_CCW ? value = value - increment : value = value + increment;
+  return value;
+}
 
 /**
    Fill in leading zero to numbers in order to always have 2 digits
