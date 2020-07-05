@@ -67,6 +67,9 @@ int currPosition;
 unsigned long MaxSliderPosition = 10500; // rail=70cm utiles, spindle =4cm perimeter , motor=200 steps per rev. *4 (microstepping setting)
 int currPan = 0;
 int ManualSteps = 0;
+int NpanoFrames = 1;
+int panoramaAngl = 30;
+int Frame = 1;
 
 // ######## create OLED object #######
 
@@ -135,7 +138,7 @@ int exposureTime = 0;    // Time for exposure in Timer Interrupt (10 msec)
 /* This section defines the consecutive menus
     the text captions to display at various steps ect
 */
-int maxNumber = 14;  //counting starts at 0
+int maxNumber = 15;  //counting starts at 0
 char* myMenus[] = {
   "SCR_INTERVAL",
   "SCR_MODE",
@@ -151,6 +154,7 @@ char* myMenus[] = {
   "SCR_SINGLE",
   "SCR_MANUAL_LONG",
   "SCR_MANUAL_ROT",
+  "SCR_PANORAMA",
 };
 
 unsigned const int SCR_INTERVAL = 0;
@@ -173,8 +177,10 @@ unsigned const int powerSaveOn = 101;
 unsigned const int  SCR_SINGLE = 11;
 unsigned const int SCR_MANUAL_LONG = 12;
 unsigned const int SCR_MANUAL_ROT = 13;
+unsigned const int SCR_PANORAMA = 14;
+unsigned const int SCR_PANO_OFFSET = 141;
 
-unsigned const int MainScreen = 111;
+unsigned const int MainScreen = 222;
 const int MODE_M = 0;
 const int MODE_BULB = 1;
 int mode = MODE_M;
@@ -385,11 +391,16 @@ void loop(void)
           currentMenu = SCR_MANUAL_LONG;
           ManualSteps = 0;
           break;
+        case SCR_PANORAMA:
+          MenuString(x);
+          printPanoramaMenu();
+          currentMenu = SCR_PANORAMA;
+          break;
       }
     }
   }
 
-  if (currentMenu < 111) {
+  if (currentMenu < 222) {
     volatile unsigned char encodeValue = r.process();
     if (encodeValue) {
       switch ( currentMenu ) {
@@ -585,10 +596,16 @@ void loop(void)
             }
           }
           break;
+        case SCR_PANORAMA:
+          NpanoFrames += 1;
+          break;
+        case SCR_PANO_OFFSET:
+          panoramaAngl += 1;
+          break;
       }
     }// end of if (encodeValue)
 
-   if (r.buttonPressedReleased(20)) {
+    if (r.buttonPressedReleased(20)) {
       switch ( currentMenu ) {
         case SCR_INTERVAL:
           currentMenu = MainScreen;
@@ -682,6 +699,15 @@ void loop(void)
           pre(x);
           break;
         case SCR_MANUAL_LONG:
+          currentMenu = MainScreen;
+          x = currentMenu;
+          pre(x);
+          break;
+        case SCR_PANORAMA:
+          currentMenu = SCR_PANO_OFFSET;
+          printPanoramaMenu();
+          break;
+        case SCR_PANO_OFFSET:
           currentMenu = MainScreen;
           x = currentMenu;
           pre(x);
@@ -820,7 +846,7 @@ void releaseCamera() {
     digitalWrite(4, LOW);
   }
 
-  if ((currPosition >= panStart * 200) && (currPan <= panAngl / (1.8 / 8))) {
+  if ((currPosition >= panStart * 400) && (currPan <= panAngl / (1.8 / 8))) {
     for (Index = 0; Index < panNsteps ; Index++)
     {
       digitalWrite(5, HIGH);
@@ -828,6 +854,49 @@ void releaseCamera() {
       digitalWrite(5, LOW);
       delayMicroseconds(1200);
       currPan++;
+    }
+  }
+  //########################################################
+
+  /*Panorama mode */
+  if (NpanoFrames > 1) {
+    //if the panorama mode is active
+    if (Frame < NpanoFrames) {
+      if (panDir = 1) {
+        // normal direction
+        digitalWrite(4, HIGH);
+      } else {
+        digitalWrite(4, LOW);
+      }
+      for (Index = 0; Index < panoramaAngl / (1.8 / 8) ; Index++)
+      {
+        digitalWrite(5, HIGH);
+        delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+        digitalWrite(5, LOW);
+        delayMicroseconds(1200);
+      }
+    }
+    if (Frame = NpanoFrames) {
+      if (panDir = 1) {
+        // inverting direction by setting pin 4 to the opposite state
+        digitalWrite(4, LOW);
+      } else {
+        digitalWrite(4, HIGH);
+      }
+      for (Index = 0; Index < (panoramaAngl * NpanoFrames) / (1.8 / 8) ; Index++)
+        //come back to Frame 1 position
+      {
+        digitalWrite(5, HIGH);
+        delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+        digitalWrite(5, LOW);
+        delayMicroseconds(1200);
+      }
+    }
+    // count the frames until reaching the max number of panorama frames
+    // then loop back to 1
+    Frame += 1;
+    if (Frame = NpanoFrames) {
+      Frame = 1;
     }
   }
 
@@ -1158,116 +1227,141 @@ void printPowerSaveMenu() {
   u8x8.print("mode. ");
 }
 
+void printPanoramaMenu() {
 
-//###############GRAPHIC FUNCTIONS ###############
+  u8x8.clear();
 
-
-void blinkOLED() {
-  for (int i = 0; i < 3; i++)
-  {
-    u8x8.setContrast(1);
-    //u8x8.sleepOn();
-    delay(50);
-    u8x8.setContrast(255);
-    //u8x8.sleepOff();
-    delay(50);
-  }
-}
-
-void draw_bar(uint8_t c, uint8_t is_inverse)
-{
-
-  uint8_t r;
-  u8x8.setInverseFont(is_inverse);
-  for ( r = 0; r < u8x8.getRows(); r++ )
-  {
-    u8x8.setCursor(c, r);
-    u8x8.print(" ");
-  }
-}
-
-/**
-   Update the time display in the main screen
-*/
-void updateTime() {
-
-  unsigned long finerRunningTime = runningTime + (millis() - previousMillis);
-
-  if ( isRunning ) {
-
-    int hours = finerRunningTime / 1000 / 60 / 60;
-    int minutes = (finerRunningTime / 1000 / 60) % 60;
-    int secs = (finerRunningTime / 1000 ) % 60;
-
-    String sHours = fillZero( hours );
-    String sMinutes = fillZero( minutes );
-    String sSecs = fillZero( secs );
-
-    u8x8.setCursor(8, 2);
-    u8x8.print( sHours );
-    u8x8.setCursor(10, 2);
-    u8x8.print(":");
-    u8x8.setCursor(11, 2);
-    u8x8.print( sMinutes );
-    u8x8.setCursor(13, 2);
-    u8x8.print(":");
-    u8x8.setCursor(14, 2);
-    u8x8.print( sSecs );
+  u8x8.setCursor(0, 0);
+  if (currentMenu == 14) {
+    u8x8.inverse();
+    u8x8.print("N Frames :   ");
+    u8x8.print(NpanoFrames);
+    u8x8.noInverse();
   } else {
-    u8x8.setCursor(8, 2);
-    u8x8.print("   Done!");
+    u8x8.print("N Frames :   ");
+    u8x8.print(NpanoFrames);
+  }
+  u8x8.setCursor(0, 2);
+  if (currentMenu == 141) {
+    u8x8.inverse();
+    u8x8.print("Angle offset:  ");
+    u8x8.print(panoramaAngl);
+    u8x8.noInverse();
+  } else {
+    u8x8.print("Angle offset:  ");
+    u8x8.print(panoramaAngl);
   }
 }
 
-/*decay2sec calculates how many steps it takes
-  to gradually stop the motor
-  over 48 icrements (=2 seconds at a 24fps frame rate in the rendered video)*/
+  //###############GRAPHIC FUNCTIONS ###############
 
-int decay2sec(int x) {
 
-  int count = 1;
-  int stepchg = x / 48;
-  int totchg = stepchg;
-  int y;
-  while (count <= 48) {
-
-    y += round(x - totchg);
-    totchg += stepchg;
-    count ++;
+  void blinkOLED() {
+    for (int i = 0; i < 3; i++)
+    {
+      u8x8.setContrast(1);
+      //u8x8.sleepOn();
+      delay(50);
+      u8x8.setContrast(255);
+      //u8x8.sleepOff();
+      delay(50);
+    }
   }
-  return count;
-}
-// ----------- HELPER METHODS -------------------------------------
 
-int editValue (int value , int increment) {
-  volatile unsigned char turn = r.process();
-  turn == DIR_CCW ? value = value - increment : value = value + increment;
-  return value;
-}
+  void draw_bar(uint8_t c, uint8_t is_inverse)
+  {
 
-/**
-   Fill in leading zero to numbers in order to always have 2 digits
-*/
-String fillZero( int input ) {
-
-  String sInput = String( input );
-  if ( sInput.length() < 2 ) {
-    sInput = "0";
-    sInput.concat( String( input ));
+    uint8_t r;
+    u8x8.setInverseFont(is_inverse);
+    for ( r = 0; r < u8x8.getRows(); r++ )
+    {
+      u8x8.setCursor(c, r);
+      u8x8.print(" ");
+    }
   }
-  return sInput;
-}
 
-String printFloat(float f, int total, int dec) {
+  /**
+     Update the time display in the main screen
+  */
+  void updateTime() {
 
-  static char dtostrfbuffer[8];
-  String s = dtostrf(f, total, dec, dtostrfbuffer);
-  return s;
-}
+    unsigned long finerRunningTime = runningTime + (millis() - previousMillis);
 
-String printInt( int i, int total) {
-  float f = i;
-  static char dtostrfbuffer[8];
-  String s = dtostrf(f, total, 0, dtostrfbuffer);
-  return s;
-}
+    if ( isRunning ) {
+
+      int hours = finerRunningTime / 1000 / 60 / 60;
+      int minutes = (finerRunningTime / 1000 / 60) % 60;
+      int secs = (finerRunningTime / 1000 ) % 60;
+
+      String sHours = fillZero( hours );
+      String sMinutes = fillZero( minutes );
+      String sSecs = fillZero( secs );
+
+      u8x8.setCursor(8, 2);
+      u8x8.print( sHours );
+      u8x8.setCursor(10, 2);
+      u8x8.print(":");
+      u8x8.setCursor(11, 2);
+      u8x8.print( sMinutes );
+      u8x8.setCursor(13, 2);
+      u8x8.print(":");
+      u8x8.setCursor(14, 2);
+      u8x8.print( sSecs );
+    } else {
+      u8x8.setCursor(8, 2);
+      u8x8.print("   Done!");
+    }
+  }
+
+  /*decay2sec calculates how many steps it takes
+    to gradually stop the motor
+    over 48 icrements (=2 seconds at a 24fps frame rate in the rendered video)*/
+
+  int decay2sec(int x) {
+
+    int count = 1;
+    int stepchg = x / 48;
+    int totchg = stepchg;
+    int y;
+    while (count <= 48) {
+
+      y += round(x - totchg);
+      totchg += stepchg;
+      count ++;
+    }
+    return count;
+  }
+  // ----------- HELPER METHODS -------------------------------------
+
+  int editValue (int value , int increment) {
+    volatile unsigned char turn = r.process();
+    turn == DIR_CCW ? value = value - increment : value = value + increment;
+    return value;
+  }
+
+  /**
+     Fill in leading zero to numbers in order to always have 2 digits
+  */
+  String fillZero( int input ) {
+
+    String sInput = String( input );
+    if ( sInput.length() < 2 ) {
+      sInput = "0";
+      sInput.concat( String( input ));
+    }
+    return sInput;
+  }
+
+  String printFloat(float f, int total, int dec) {
+
+    static char dtostrfbuffer[8];
+    String s = dtostrf(f, total, dec, dtostrfbuffer);
+    return s;
+  }
+
+  String printInt( int i, int total) {
+    float f = i;
+    static char dtostrfbuffer[8];
+    String s = dtostrf(f, total, 0, dtostrfbuffer);
+    return s;
+  }
