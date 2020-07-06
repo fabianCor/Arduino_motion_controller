@@ -529,78 +529,94 @@ void loop(void)
           currentMenu = SCR_RUNNING;
           break;
         case SCR_MANUAL_LONG:
-          if (encodeValue == DIR_CW ) {
-            ManualSteps += 200 ;
-            digitalWrite(6, HIGH);
+          if (encodeValue == DIR_CCW ) {
+            ManualSteps += 20 ;
+          } else {            
+            ManualSteps -= 20;
+          }
             int target = currPosition + ManualSteps;
-            Serial.println(ManualSteps);
+              u8x8.clear();
+              u8x8.setCursor(0, 2);
+              u8x8.print("Target: ");
+              u8x8.print(Target);
+              u8x8.setCursor(0, 6);
+              u8x8.print("Current: ");
+              u8x8.print(currPosition); 
+              
             if ( target >= MaxSliderPosition) {
               target = MaxSliderPosition;
               u8x8.clear();
               u8x8.setCursor(0, 4);
               u8x8.print("Max pos. reached");
+              u8x8.setCursor(0, 6);
+              u8x8.print(currPosition); 
+            } else if ( target <= 5) {
+              target = 5;
+              u8x8.clear();
+              u8x8.setCursor(0, 4);
+              u8x8.print("Zero reached");
+              u8x8.setCursor(0, 6);
+              u8x8.print(currPosition);              
             }
-            while ( currPosition < target )
+            if (currPosition < target){
+              digitalWrite(6, HIGH);
+              while ( currPosition < target )
             {
               Serial.print(".");
               digitalWrite(7, HIGH);
-              delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+              delayMicroseconds(800); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
               digitalWrite(7, LOW);
-              delayMicroseconds(1200);
+              delayMicroseconds(800);
               currPosition++;
             }
-          } else if (encodeValue == DIR_CCW) {
-            digitalWrite(6, LOW);
-            ManualSteps = ManualSteps + 200;
-            int target = currPosition - ManualSteps;
-            if ( target <= 0) {
-              target = 0;
-              u8x8.clear();
-              u8x8.setCursor(0, 4);
-              u8x8.print("Max pos. reached");
-            }
-            while ( currPosition > target )
+            } else {
+              digitalWrite(6, LOW);
+              while ( currPosition > target )
             {
+              Serial.print(".");
               digitalWrite(7, HIGH);
-              delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+              delayMicroseconds(800); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
               digitalWrite(7, LOW);
-              delayMicroseconds(1200);
-              currPosition--;
+              delayMicroseconds(800);
+              currPosition++;
             }
-          }
+            }
           break;
+          
         case SCR_MANUAL_ROT:
           if (encodeValue == DIR_CW ) {
-            ManualSteps += 20 ;
+            ManualSteps += 5 ;
             int panTarget = currPan + ManualSteps;
             digitalWrite(4, HIGH);
             while (currPan < panTarget)
             {
               digitalWrite(5, HIGH);
-              delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+              delayMicroseconds(1000); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
               digitalWrite(5, LOW);
-              delayMicroseconds(1200);
+              delayMicroseconds(1000);
               currPan++;
             }
           } else {
-            ManualSteps += 20 ;
+            ManualSteps += 5 ;
             int panTarget = currPan - ManualSteps;
             digitalWrite(4, LOW);
             while (currPan > panTarget)
             {
               digitalWrite(5, HIGH);
-              delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+              delayMicroseconds(1000); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
               digitalWrite(5, LOW);
-              delayMicroseconds(1200);
+              delayMicroseconds(1000);
               currPan--;
             }
           }
           break;
         case SCR_PANORAMA:
           NpanoFrames += 1;
+          printPanoramaMenu();
           break;
         case SCR_PANO_OFFSET:
           panoramaAngl += 1;
+          printPanoramaMenu();
           break;
       }
     }// end of if (encodeValue)
@@ -862,7 +878,7 @@ void releaseCamera() {
   if (NpanoFrames > 1) {
     //if the panorama mode is active
     if (Frame < NpanoFrames) {
-      if (panDir = 1) {
+      if (panDir == 1) {
         // normal direction
         digitalWrite(4, HIGH);
       } else {
@@ -876,8 +892,8 @@ void releaseCamera() {
         delayMicroseconds(1200);
       }
     }
-    if (Frame = NpanoFrames) {
-      if (panDir = 1) {
+    if (Frame == NpanoFrames) {
+      if (panDir == 1) {
         // inverting direction by setting pin 4 to the opposite state
         digitalWrite(4, LOW);
       } else {
@@ -895,7 +911,7 @@ void releaseCamera() {
     // count the frames until reaching the max number of panorama frames
     // then loop back to 1
     Frame += 1;
-    if (Frame = NpanoFrames) {
+    if (Frame == NpanoFrames) {
       Frame = 1;
     }
   }
