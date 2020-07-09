@@ -545,26 +545,26 @@ void loop(void)
           break;
         case SCR_MANUAL_ROT:
           encodeValue == DIR_CCW ? stepSizePan = stepSizePan - 10 : stepSizePan = stepSizePan + 10;
-          if ( stepSize <=1) {
+          if ( stepSize <= 1) {
             stepSize = 1;
             blinkOLED();
           }
           printManualRotation();
           break;
         case SCR_MANUAL_ROT_Move:
-          encodeValue == DIR_CW ? panTarget += stepSizePan : panTarget -= stepSizePan; 
+          encodeValue == DIR_CW ? panTarget += stepSizePan : panTarget -= stepSizePan;
           printManualRotation();
           ManualRotation();
           break;
         case SCR_MANUAL_LONG:
           encodeValue == DIR_CCW ? stepSize = stepSize - 20 : stepSize = stepSize + 20;
-          if ( stepSize <=1) {
+          if ( stepSize <= 1) {
             stepSize = 1;
             blinkOLED();
           }
           printManualSlide();
           break;
-          case SCR_MANUAL_LONG_Move:
+        case SCR_MANUAL_LONG_Move:
           encodeValue == DIR_CCW ? target = target - stepSize : target = target + stepSize;
           if ( target >= MaxSliderPosition - 100) {
             target = MaxSliderPosition - 100;
@@ -680,7 +680,7 @@ void loop(void)
           break;
         case SCR_MANUAL_LONG:
           currentMenu = SCR_MANUAL_LONG_Move;
-        break;
+          break;
         case SCR_MANUAL_LONG_Move:
           u8x8.clear();
           currentMenu = MainScreen;
@@ -696,6 +696,7 @@ void loop(void)
           currentMenu = MainScreen;
           x = 14;
           pre(x);
+          Frame = 1;
           break;
       }
     }
@@ -790,100 +791,54 @@ void running() {        // shooting
 void releaseCamera() {
 
   /*Running the stepper motor here at the end of the exposure*/
-  int DecayLength = decay2sec(sliderNsteps);
-  MaxSliderPosition = MaxSliderPosition - DecayLength;
+  int DecayLength = decay2sec(sliderNsteps);                    //calculate how much distance the motor would move, if slowing in 48 even increments
+  MaxSliderPosition = MaxSliderPosition - DecayLength;          //define the end of the rail accordingly
   // running the stepper motor
-  if (sliderDir == 1) {
+  if (sliderDir == 1) {                                            // set direction pins for slider
     digitalWrite(6, HIGH);
   } else {
     digitalWrite(6, LOW);
   }
-  if (currPosition <= MaxSliderPosition) {
-    for (Index = 0; Index < sliderNsteps ; Index++)
-    {
-      digitalWrite(7, HIGH);
-      delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
-      digitalWrite(7, LOW);
-      delayMicroseconds(1200);
-      currPosition++;
-    }
-  } else {
-    /*Setting a speed decay at the end of the rail over 48 shots*/
-    int stepchg = sliderNsteps / 48;
-    int totchg = stepchg;
-    sliderNsteps = round(sliderNsteps - totchg);
-    for (Index = 0; Index < sliderNsteps ; Index++) //reducing Nsteps by 10% at every loop
-    {
-      digitalWrite(7, HIGH);
-      delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
-      digitalWrite(7, LOW);
-      delayMicroseconds(1200);
-      currPosition++;
-    } // end of stepper loop
-    totchg = totchg + stepchg;
-  }
-  delay(10);// 100 micro-seconds delay then trigger camera
-
-  // move the pan motor
-  if (panDir = 1) {
+  if (panDir == 1) {                                               // set direction pins for panning
     digitalWrite(4, HIGH);
   } else {
     digitalWrite(4, LOW);
   }
+  if (Frame >= NpanoFrames) {                           // Always true outside of panorama mode (Frame =1 per default)
+    Frame = 1;
+    /*Move slider */
+    if (currPosition <= MaxSliderPosition) {
+      MoveSlider(sliderNsteps);                             // moving the slider motor for n = sliderNsteps
+    } else {                                                // when reaching the end of the rail start reducing the Nsteps
+      int stepchg = sliderNsteps / 48;
+      int totchg = stepchg;
+      sliderNsteps = round(sliderNsteps - totchg);
+      MoveSlider(sliderNsteps);
+      totchg = totchg + stepchg;
+    }
+  }
+  delay(5);
+  /*Panorama mode */
+  if (NpanoFrames >= 2) {                                           //if the panorama mode is active
+    if (Frame < NpanoFrames) {                                      //if the max number of frames not reached
+      MovePanMotor(panoramaAngl / (1.8 / 8) );                      //move motor
+    } else {                                                        // if the number of panorama frames has been reached
+      panDir == 1 ?  digitalWrite(4, LOW) : digitalWrite(4, HIGH);  // inverting direction by setting pin 4 to the opposite state
+      MovePanMotor((panoramaAngl * (NpanoFrames - 1)) / (1.8 / 8)); //move motor by angle*Nframes back to position 1
+    }
+    Frame++;                                                        // increase frame count at each loop
 
-  if ((currPosition >= panStart * 400) && (currPan <= panAngl / (1.8 / 8))) {
-    for (Index = 0; Index < panNsteps ; Index++)
-    {
-      digitalWrite(5, HIGH);
-      delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
-      digitalWrite(5, LOW);
-      delayMicroseconds(1200);
-      currPan++;
+  } else {                                                          
+  /*normal panning*/
+    delay(5);                                                      // 10 mili-seconds delay then move pan motor
+    if ((currPosition >= panStart * 400) && (currPan <= panAngl / (1.8 / 8))) {
+      MovePanMotor(panNsteps);
+      currPan = currPan + panNsteps;
     }
   }
   //########################################################
 
-  /*Panorama mode */
-  if (NpanoFrames > 1) {
-    //if the panorama mode is active
-    if (Frame < NpanoFrames) {
-      if (panDir == 1) {
-        // normal direction
-        digitalWrite(4, HIGH);
-      } else {
-        digitalWrite(4, LOW);
-      }
-      for (Index = 0; Index < panoramaAngl / (1.8 / 8) ; Index++)
-      {
-        digitalWrite(5, HIGH);
-        delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
-        digitalWrite(5, LOW);
-        delayMicroseconds(1200);
-      }
-    }
-    if (Frame == NpanoFrames) {
-      if (panDir == 1) {
-        // inverting direction by setting pin 4 to the opposite state
-        digitalWrite(4, LOW);
-      } else {
-        digitalWrite(4, HIGH);
-      }
-      for (Index = 0; Index < (panoramaAngl * NpanoFrames) / (1.8 / 8) ; Index++)
-        //come back to Frame 1 position
-      {
-        digitalWrite(5, HIGH);
-        delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
-        digitalWrite(5, LOW);
-        delayMicroseconds(1200);
-      }
-    }
-    // count the frames until reaching the max number of panorama frames
-    // then loop back to 1
-    Frame += 1;
-    if (Frame == NpanoFrames) {
-      Frame = 1;
-    }
-  }
+
 
   // short trigger in M-Mode
   if ( releaseTime < 1 ) {
@@ -920,6 +875,34 @@ void releaseCamera() {
     }
   }
 }
+// ############################################################################
+// MOTOR MOVEMENT
+// ############################################################################
+
+void MoveSlider(int steps) {
+  for (Index = 0; Index < abs(steps) ; Index++)
+  {
+    digitalWrite(7, HIGH);
+    delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+    digitalWrite(7, LOW);
+    delayMicroseconds(1200);
+    if (steps < 0 ) {
+      currPosition--;
+    } else {
+      currPosition++;
+    }
+  }
+}
+
+void MovePanMotor(int steps) {
+  for (Index = 0; Index < steps ; Index++)
+  {
+    digitalWrite(5, HIGH);
+    delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+    digitalWrite(5, LOW);
+    delayMicroseconds(1200);
+  }
+}
 
 void possiblyEndLongExposure() {
   if ( ( bulbReleasedAt != 0 ) && ( millis() >= ( bulbReleasedAt + releaseTime * 1000 ) ) ) {
@@ -949,56 +932,56 @@ void possiblyRampInterval() {
   }
 }
 
-void ManualRotation(){
-  
-        if (currPan < panTarget) {
-            digitalWrite(4, HIGH);
-            while(currPan < panTarget)
-            {
-              digitalWrite(5, HIGH);
-              delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
-              digitalWrite(5, LOW);
-              delayMicroseconds(1200);
-              currPan++;
-            }
-          } else if (currPan > panTarget) {
-            digitalWrite(4, LOW);
-            while(currPan > panTarget)
-            {
-              digitalWrite(5, HIGH);
-              delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
-              digitalWrite(5, LOW);
-              delayMicroseconds(1000);
-              currPan--;
-            }
-          }
+void ManualRotation() {
+
+  if (currPan < panTarget) {
+    digitalWrite(4, HIGH);
+    while (currPan < panTarget)
+    {
+      digitalWrite(5, HIGH);
+      delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+      digitalWrite(5, LOW);
+      delayMicroseconds(1200);
+      currPan++;
+    }
+  } else if (currPan > panTarget) {
+    digitalWrite(4, LOW);
+    while (currPan > panTarget)
+    {
+      digitalWrite(5, HIGH);
+      delayMicroseconds(1200); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+      digitalWrite(5, LOW);
+      delayMicroseconds(1000);
+      currPan--;
+    }
+  }
 }
 
-void ManualSlide(){
-          //encodeValue = FALSE
-          
-          if (currPosition < target) {
-            digitalWrite(6, LOW);
-            while ( currPosition < target )
-            {
-              digitalWrite(7, HIGH);
-              delayMicroseconds(1000); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
-              digitalWrite(7, LOW);
-              delayMicroseconds(1000);
-              currPosition++;
-            }
-          } else {
-            digitalWrite(6, HIGH);
-            while ( currPosition > target )
-            {
-              digitalWrite(7, HIGH);
-              delayMicroseconds(1000); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
-              digitalWrite(7, LOW);
-              delayMicroseconds(1000);
-              currPosition--;
-            }
-          }
-          }
+void ManualSlide() {
+  //encodeValue = FALSE
+
+  if (currPosition < target) {
+    digitalWrite(6, LOW);
+    while ( currPosition < target )
+    {
+      digitalWrite(7, HIGH);
+      delayMicroseconds(1000); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+      digitalWrite(7, LOW);
+      delayMicroseconds(1000);
+      currPosition++;
+    }
+  } else {
+    digitalWrite(6, HIGH);
+    while ( currPosition > target )
+    {
+      digitalWrite(7, HIGH);
+      delayMicroseconds(1000); // 1000000 * stepper_1DelayTime/n = time between steps in microseconds
+      digitalWrite(7, LOW);
+      delayMicroseconds(1000);
+      currPosition--;
+    }
+  }
+}
 /* /////////////////////////////////////////////////////////////////////
   //###############   MENU ACTIONS and display #############
   ////////////////////////////////////////////////////////////////////////
@@ -1290,31 +1273,31 @@ void printPowerSaveMenu() {
   u8x8.print("mode. ");
 }
 
-void printManualRotation(){
-          u8x8.clear();
-          u8x8.setCursor(0,2);
-          u8x8.print("steps:");
-          u8x8.print(stepSizePan);
-          u8x8.setCursor(0, 4);
-          u8x8.print("Current: ");
-          u8x8.print(currPan);
-          u8x8.setCursor(0, 6);
-          u8x8.print("Target: ");
-          u8x8.print(panTarget);
-          
+void printManualRotation() {
+  u8x8.clear();
+  u8x8.setCursor(0, 2);
+  u8x8.print("steps:");
+  u8x8.print(stepSizePan);
+  u8x8.setCursor(0, 4);
+  u8x8.print("Current: ");
+  u8x8.print(currPan);
+  u8x8.setCursor(0, 6);
+  u8x8.print("Target: ");
+  u8x8.print(panTarget);
+
 }
-void printManualSlide(){
-          u8x8.clear();
-          u8x8.setCursor(0,2);
-          u8x8.print("steps:");
-          u8x8.print(stepSize);
-          u8x8.setCursor(0, 4);
-          u8x8.print("Pos: ");
-          u8x8.print(currPosition);
-          u8x8.setCursor(0, 6);
-          u8x8.print("Target:");
-          u8x8.print(target);
-          
+void printManualSlide() {
+  u8x8.clear();
+  u8x8.setCursor(0, 2);
+  u8x8.print("steps:");
+  u8x8.print(stepSize);
+  u8x8.setCursor(0, 4);
+  u8x8.print("Pos: ");
+  u8x8.print(currPosition);
+  u8x8.setCursor(0, 6);
+  u8x8.print("Target:");
+  u8x8.print(target);
+
 }
 
 //###############GRAPHIC FUNCTIONS ###############
