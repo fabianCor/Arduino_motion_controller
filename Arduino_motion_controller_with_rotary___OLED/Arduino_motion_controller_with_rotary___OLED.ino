@@ -64,7 +64,7 @@ byte panDir = 1;
 int panStart = 10; //(= 200 = 1cm  steps at 1/4 step resolution; and 4 seconds of redered movie)
 int panAngl = 30;
 int currPosition;
-unsigned long MaxSliderPosition = 10500; // rail=70cm utiles, spindle =4cm perimeter , motor=200 steps per rev. *4 (microstepping setting)
+unsigned long MaxSliderPosition = 10400; // rail=70cm utiles, spindle =4cm perimeter , motor=200 steps per rev. *4 (microstepping setting)
 int currPan = 0;
 int ManualSteps = 0;
 int NpanoFrames = 1;
@@ -106,7 +106,7 @@ unsigned long previousMillis = 0;   // Timestamp of last shutter release
 unsigned long runningTime = 0;
 unsigned long lastCheckTime = 0;
 
-float interval = 15.0;          // the current interval
+float interval = 10.0;          // the current interval
 long maxNoOfShots = 0;
 int isRunning = 0;            // flag indicates intervalometer is running
 unsigned long bulbReleasedAt = 0;
@@ -240,7 +240,7 @@ void setup(void)
   u8x8.print("limit switch...");
 
   // Start Homing procedure of Stepper Motor at startup
-  digitalWrite(10, HIGH); //send power to limit switch
+  //digitalWrite(10, HIGH); //send power to limit switch
   while (digitalRead(LimitSwitch)) {  // Do this until the switch is activated
     digitalWrite(6, HIGH);      // (HIGH = anti-clockwise / LOW = clockwise)
     digitalWrite(7, HIGH);
@@ -268,7 +268,7 @@ void setup(void)
   u8x8.clear();
 
   /*Comment out*/
-  digitalWrite(10, LOW); //cut power to limit switch
+  //digitalWrite(10, LOW); //cut power to limit switch
 
   //#################  START SCREEN ################
   u8x8.clear();
@@ -361,6 +361,8 @@ void loop(void)
           break;
         case SCR_RUNNING:
           u8x8.clear();
+          isRunning = 1;
+          printRunningScreen();
           currentMenu = SCR_RUNNING;
           break;
         case SCR_PAUSE:
@@ -516,7 +518,6 @@ void loop(void)
           break;
         case SCR_RUNNING:
           printRunningScreen();
-          isRunning = 1;
           u8x8.setCursor(0, 6);
           u8x8.print("< Settings");
           break;
@@ -541,6 +542,7 @@ void loop(void)
           break;
         case powerSaveOn:
           u8x8.setPowerSave(false);
+          u8x8.clear();
           currentMenu = SCR_RUNNING;
           break;
         case SCR_MANUAL_ROT:
@@ -557,7 +559,7 @@ void loop(void)
           ManualRotation();
           break;
         case SCR_MANUAL_LONG:
-          encodeValue == DIR_CCW ? stepSize = stepSize - 20 : stepSize = stepSize + 20;
+          encodeValue == DIR_CCW ? stepSize = stepSize - 50 : stepSize = stepSize + 50;
           if ( stepSize <= 1) {
             stepSize = 1;
             blinkOLED();
@@ -566,15 +568,16 @@ void loop(void)
           break;
         case SCR_MANUAL_LONG_Move:
           encodeValue == DIR_CCW ? target = target - stepSize : target = target + stepSize;
-          if ( target >= MaxSliderPosition - 100) {
-            target = MaxSliderPosition - 100;
-            blinkOLED();
-          } else if ( target <= 5) {
-            target = 5;
+          if ( ( target <= MaxSliderPosition) && (target >= 0)) {
+            printManualSlide();
+            ManualSlide();
+          } else if (target > MaxSliderPosition) {
+            target = MaxSliderPosition;
+            blinkOLED();  ///
+          } else if (target < 0) {
+            target = 0;
             blinkOLED();
           }
-          printManualSlide();
-          ManualSlide();
           break;
       }
     }// end of if (encodeValue)
@@ -663,6 +666,7 @@ void loop(void)
           break;
         case powerSaveOn:
           u8x8.setPowerSave(false);
+          u8x8.clear();
           currentMenu = MainScreen;
           x = currentMenu;
           pre(x);
@@ -701,7 +705,9 @@ void loop(void)
       }
     }
   }
-
+  if (currentMenu == SCR_RUNNING) {
+    printRunningScreen();
+  }
   /* Interrupt camera release*/
   if (cam_Release == shooting)
   {
@@ -720,6 +726,7 @@ void loop(void)
   }
   if ( isRunning ) {  // release camera, do ramping if running
     running();
+
   }
 }
 
@@ -789,7 +796,8 @@ void running() {        // shooting
    Actually release the camera
 */
 void releaseCamera() {
-
+  Serial.print("Frame is equal to: ");
+  Serial.println(Frame);
   /*Running the stepper motor here at the end of the exposure*/
   int DecayLength = decay2sec(sliderNsteps);                    //calculate how much distance the motor would move, if slowing in 48 even increments
   MaxSliderPosition = MaxSliderPosition - DecayLength;          //define the end of the rail accordingly
@@ -804,10 +812,11 @@ void releaseCamera() {
   } else {
     digitalWrite(4, LOW);
   }
-  if (Frame >= NpanoFrames) {                           // Always true outside of panorama mode (Frame =1 per default)
-    Frame = 1;
+  if (Frame == 1) {                           // Always true outside of panorama mode (Frame =1 per default)
     /*Move slider */
     if (currPosition <= MaxSliderPosition) {
+      //      Serial.print("Number of frames for pano mode: ");
+      //      Serial.println(NpanoFrames);
       MoveSlider(sliderNsteps);                             // moving the slider motor for n = sliderNsteps
     } else {                                                // when reaching the end of the rail start reducing the Nsteps
       int stepchg = sliderNsteps / 48;
@@ -819,17 +828,24 @@ void releaseCamera() {
   }
   delay(5);
   /*Panorama mode */
-  if (NpanoFrames >= 2) {                                           //if the panorama mode is active
+  if (NpanoFrames > 1) {                                           //if the panorama mode is active
     if (Frame < NpanoFrames) {                                      //if the max number of frames not reached
+      Frame = Frame + 1;
+      //      Serial.print("moving pan motor ");
+      //      Serial.println(panoramaAngl);
       MovePanMotor(panoramaAngl / (1.8 / 8) );                      //move motor
-    } else {                                                        // if the number of panorama frames has been reached
+    } else if (Frame == NpanoFrames) {
+      Frame = 1;
+      //      Serial.print("moving back to Frame 1 in inverse direction ");
+      //      Serial.println(panoramaAngl * (NpanoFrames - 1));
+      //      Serial.println();                                             // if the number of panorama frames has been reached
       panDir == 1 ?  digitalWrite(4, LOW) : digitalWrite(4, HIGH);  // inverting direction by setting pin 4 to the opposite state
       MovePanMotor((panoramaAngl * (NpanoFrames - 1)) / (1.8 / 8)); //move motor by angle*Nframes back to position 1
     }
-    Frame++;                                                        // increase frame count at each loop
+    // increase frame count at each loop
 
-  } else {                                                          
-  /*normal panning*/
+  } else {
+    /*normal panning*/
     delay(5);                                                      // 10 mili-seconds delay then move pan motor
     if ((currPosition >= panStart * 400) && (currPan <= panAngl / (1.8 / 8))) {
       MovePanMotor(panNsteps);
@@ -988,6 +1004,7 @@ void ManualSlide() {
 */
 void printIntervalMenu() {
   // display Interval between motor actions in seconds
+  u8x8.clear();
   u8x8.setCursor(1, 2);
   u8x8.print("Interval (sec)");
   //u8x8.draw1x2String(1, 2, "Interval (sec)");
@@ -1023,7 +1040,7 @@ void printNoOfShotsMenu() {
 }
 
 void printExposureMenu() {
-
+  u8x8.clear();
   u8x8.setCursor(0, 2);
   u8x8.print("release time : ");
   u8x8.setCursor(11, 4);
@@ -1268,35 +1285,30 @@ void printSingleScreen() {
 void printPowerSaveMenu() {
   u8x8.clear();
   u8x8.setCursor(0, 2);
-  u8x8.print("Enter pwr save");
-  u8x8.setCursor(0, 4);
-  u8x8.print("mode. ");
+  u8x8.print("Turn > pwr save");
 }
 
 void printManualRotation() {
   u8x8.clear();
   u8x8.setCursor(0, 2);
-  u8x8.print("steps:");
+  u8x8.print("steps: ");
   u8x8.print(stepSizePan);
   u8x8.setCursor(0, 4);
-  u8x8.print("Current: ");
-  u8x8.print(currPan);
-  u8x8.setCursor(0, 6);
-  u8x8.print("Target: ");
+  u8x8.print("moving to: ");
   u8x8.print(panTarget);
 
 }
 void printManualSlide() {
   u8x8.clear();
   u8x8.setCursor(0, 2);
-  u8x8.print("steps:");
+  u8x8.print("steps: ");
   u8x8.print(stepSize);
   u8x8.setCursor(0, 4);
-  u8x8.print("Pos: ");
-  u8x8.print(currPosition);
-  u8x8.setCursor(0, 6);
-  u8x8.print("Target:");
+  u8x8.print("Slider at: ");
   u8x8.print(target);
+  u8x8.setCursor(0, 6);
+  u8x8.print((target * 100) / 10400);
+  u8x8.print(" % of rail");
 
 }
 
