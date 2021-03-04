@@ -24,7 +24,7 @@
 **NEWLLY Implemented:** 
 a panorama mode to make high resolution N-photo panoramas over a user defined angle 'lambda' at every step of the linear motion. (can be used for HDR too by setting a rotation of 0 degrees); 
 
-Changed the LCD menu navigation to be more responsive to rotary encoder navigation.
+Changed the OLED menu navigation to be more responsive to rotary encoder navigation.
 The aspect could be much prettier, but the available space on the Arduino Uno is quite limited.
 
 **NEEDED IMPROVEMENTS:**
