@@ -11,7 +11,7 @@
  the user defines the speed (default = 15 steps per cycle), and the program automatically calculates the speed decay to stop in 48 images (=2 sec of rendered video at 24fps rendering).
  
  * Motor 2. for panning (rotational movement). 200 steps per revol. 1/8 microstepping (=1.8/8= 0.225 degrees per step)
- *   the user defines 
+ The user defines:
   *    when to start panning (default = after sliding for 10cm), 
   *    how fast(number of steps per cycle; default = 1step), 
   *    how much (start to end angle of rotation default= 30 degrees from the start position), 
