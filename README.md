@@ -12,10 +12,10 @@
  
  * Motor 2. for panning (rotational movement). 200 steps per revol. 1/8 microstepping (=1.8/8= 0.225 degrees per step)
  *   the user defines 
- **    when to start panning (default = after sliding for 10cm), 
- **    how fast(number of steps per cycle; default = 1step), 
- **    how much (start to end angle of rotation default= 30 degrees from the start position), 
- **    as well as the direction (default= clockwise).
+  *    when to start panning (default = after sliding for 10cm), 
+  *    how fast(number of steps per cycle; default = 1step), 
+  *    how much (start to end angle of rotation default= 30 degrees from the start position), 
+  *    as well as the direction (default= clockwise).
  Note: the start position is the current position when the program has initialized and the program counts from there.
 
  The controller can also be connected to a DSLR camera to control the exposure like an intervalometer.
