@@ -20,9 +20,9 @@
  Note: the start position is the current position when the program has initialized and the program counts from there.
 
  The controller can also be connected to a DSLR camera to control the exposure like an intervalometer.
-   at every cycle of the user-defined interval, the camera waits for motors to execute movements before starting an exposure
+   at every cycle of the user-defined interval, the camera waits for motors to execute movements before starting an exposure. This seems to fail on Sony cameras at the moment it looks like a more complicated trigger will be needed for those.
    
-**NEWLLY Implemented:** 
+**NEWLY Implemented:** 
 A panorama mode to make high resolution N-photo panoramas over a user defined angle 'lambda' at every step of the linear motion. (can be used for HDR too by setting a rotation of 0 degrees);
 
 
