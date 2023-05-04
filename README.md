@@ -2,7 +2,7 @@
 
 /* CONTROL EXPOSURE AND CAMERA MOVEMENT WITH ARDUINO (UNO or NANO)
 
- *  This program drives 2 stepper motors; both are controlled with A4988 stepper motor controllers, a 0.96' OLED display and a rotary encoder with push button
+ This program drives 2 stepper motors; both are controlled with A4988 stepper motor controllers, a 0.96' OLED display and a rotary encoder with push button
  
  * Motor 1. for linear motion on a camera slider; 
  1cm diameter spindle, 200 steps per revolution and microstepping set to 1/4 (=800 steps per revol)
@@ -11,6 +11,7 @@
  the user defines the speed (default = 15 steps per cycle), and the program automatically calculates the speed decay to stop in 48 images (=2 sec of rendered video at 24fps rendering).
  
  * Motor 2. for panning (rotational movement). 200 steps per revol. 1/8 microstepping (=1.8/8= 0.225 degrees per step)
+ 
  The user defines:
   *    when to start panning (default = after sliding for 10cm), 
   *    how fast(number of steps per cycle; default = 1step), 
